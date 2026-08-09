@@ -12,8 +12,9 @@ function Card({ title, sub, onClick }) {
 }
 
 export default function Admin() {
-  const { user, displayName, signOut, isConfigured } = useAuth()
+  const { user, profile, signOut, isConfigured } = useAuth()
   const nav = useNavigate()
+  const isAdmin = profile && ['owner', 'admin'].includes(profile.role)
   return (
     <>
       <Header title="Manage Tickets" back />
@@ -26,8 +27,8 @@ export default function Admin() {
         <div className="pad" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13, paddingTop: 0 }}>
           <Card title="Create event" sub="Date, venue, tickets, pricing" onClick={() => nav('/admin/create')} />
           <Card title="Manage events" sub="Edit, view, or delete" onClick={() => nav('/admin/manage')} />
-          <Card title="Profile & location" sub="Name, email, city, country" onClick={() => nav('/account')} />
-          <Card title="Account & preferences" sub="Notifications and more" onClick={() => nav('/account')} />
+          <Card title="Profile & location" sub="Name, email, city, country" onClick={() => nav('/profile')} />
+          {isAdmin && <Card title="Create staff login" sub="30-day access for your team" onClick={() => nav('/admin/staff')} />}
         </div>
         <div className="pad">
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 6 }}>Developer contact</div>

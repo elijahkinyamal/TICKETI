@@ -6,12 +6,31 @@
 
 -- ---------- PROFILES (one row per auth user) ----------
 create table if not exists public.profiles (
-  id          uuid primary key references auth.users on delete cascade,
-  full_name   text,
-  role        text not null default 'staff',      -- owner | admin | staff | viewer
-  expires_at  timestamptz,                        -- for admin-created 30-day logins
-  created_at  timestamptz not null default now()
+  id             uuid primary key references auth.users on delete cascade,
+  full_name      text,
+  role           text not null default 'staff',   -- owner | admin | staff | viewer
+  expires_at     timestamptz,                     -- for admin-created 30-day logins
+  contact_email  text,                            -- display/contact email (editable)
+  city           text,
+  country        text default 'United States',
+  notify         boolean default true,            -- "Receive notifications" toggle
+  location_based boolean default false,           -- "Location based content" toggle
+  device_id      text,                            -- active device (one-device-at-a-time login)
+  created_at     timestamptz not null default now()
 );
+
+-- Additive columns for existing projects (safe to re-run):
+alter table public.profiles add column if not exists contact_email  text;
+alter table public.profiles add column if not exists city           text;
+alter table public.profiles add column if not exists country        text default 'United States';
+alter table public.profiles add column if not exists notify         boolean default true;
+alter table public.profiles add column if not exists location_based boolean default false;
+alter table public.profiles add column if not exists device_id      text;
+
+-- Enable realtime on profiles so a second login instantly signs out the first device.
+do $$ begin
+  alter publication supabase_realtime add table public.profiles;
+exception when others then null; end $$;
 
 alter table public.profiles enable row level security;
 
@@ -49,9 +68,15 @@ create table if not exists public.events (
   price        numeric,
   fee          numeric,
   currency     text default 'USD',
+  ticket_type  text default 'Standard Admission',
+  seat_map_url text,
   status       text not null default 'live',       -- live | sold | delisted | expired
   created_at   timestamptz not null default now()
 );
+
+-- Additive columns for existing projects (safe to re-run):
+alter table public.events add column if not exists ticket_type  text default 'Standard Admission';
+alter table public.events add column if not exists seat_map_url text;
 
 alter table public.events enable row level security;
 
@@ -99,3 +124,22 @@ create policy "transfers: sender manages" on public.transfers
   for all using (auth.uid() = from_user) with check (auth.uid() = from_user);
 create policy "transfers: recipient reads" on public.transfers
   for select using (auth.email() = to_email);
+
+-- ---------- FAVORITES (saved Ticketmaster events) ----------
+create table if not exists public.favorites (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users on delete cascade,
+  tm_id      text not null,
+  name       text,
+  poster_url text,
+  venue      text,
+  starts_at  timestamptz,
+  url        text,
+  created_at timestamptz not null default now(),
+  unique (user_id, tm_id)
+);
+
+alter table public.favorites enable row level security;
+
+create policy "favorites: owner all" on public.favorites
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

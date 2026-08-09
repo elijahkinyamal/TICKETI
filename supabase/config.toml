@@ -1,0 +1,16 @@
+# Supabase CLI project config. `project_id` ties this repo to your project.
+project_id = "lhbrcahdtuxjxjqjxfnq"
+
+# All four functions require a signed-in user, so keep JWT verification on
+# (this is the default; it's stated explicitly here for clarity).
+[functions.discovery-search]
+verify_jwt = true
+
+[functions.admin-create-user]
+verify_jwt = true
+
+[functions.send-transfer]
+verify_jwt = true
+
+[functions.accept-transfer]
+verify_jwt = true

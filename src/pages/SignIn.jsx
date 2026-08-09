@@ -4,7 +4,7 @@ import Header from '../components/Header'
 import { useAuth } from '../context/AuthContext'
 
 export default function SignIn() {
-  const { signIn, signUp, isConfigured } = useAuth()
+  const { signIn, signUp, isConfigured, notice, clearNotice } = useAuth()
   const nav = useNavigate()
   const [mode, setMode] = useState('signin')
   const [name, setName] = useState('')
@@ -13,7 +13,7 @@ export default function SignIn() {
   const [msg, setMsg] = useState('')
 
   const submit = async () => {
-    setMsg('')
+    setMsg(''); clearNotice()
     try {
       if (mode === 'signup') { await signUp(email, pass, name); setMsg('Account created — check your email to confirm, then sign in.') }
       else { await signIn(email, pass); nav('/admin') }
@@ -25,12 +25,19 @@ export default function SignIn() {
       <Header title={mode === 'signup' ? 'Create account' : 'Sign in'} back />
       <div className="view">
         <div className="pad" style={{ textAlign: 'center', paddingTop: 40 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--accent)', color: '#fff', display: 'grid', placeItems: 'center', margin: '0 auto 14px', fontWeight: 900, fontSize: 22 }}>EK</div>
-          <h2 style={{ margin: '0 0 6px' }}>Welcome to Ticketmaster</h2>
+          <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--accent)', display: 'grid', placeItems: 'center', margin: '0 auto 14px' }}>
+            <svg viewBox="0 0 40 40" width="32" height="32" aria-hidden="true">
+              <path style={{ fill: '#fff' }} d="M5 13c0-1.7 1.3-3 3-3h24c1.7 0 3 1.3 3 3v3.2a3.8 3.8 0 0 0 0 7.6V27c0 1.7-1.3 3-3 3H8c-1.7 0-3-1.3-3-3v-3.2a3.8 3.8 0 0 0 0-7.6V13z" />
+              <path style={{ fill: 'none', stroke: 'var(--accent)', strokeWidth: 2, strokeLinecap: 'round', strokeDasharray: '2 3' }} d="M20 12v16" />
+            </svg>
+          </div>
+          <h2 style={{ margin: '0 0 6px' }}>Welcome to Ticket</h2>
           <p style={{ color: 'var(--ink-3)', margin: 0 }}>Sign in to manage events, tickets, and transfers.</p>
         </div>
         <div className="pad">
           {!isConfigured && <div className="notice" style={{ margin: '0 0 14px' }}>Supabase isn't configured yet — add keys to .env (see README) to enable real sign-in.</div>}
+          {notice === 'expired' && <div className="notice" style={{ margin: '0 0 14px' }}>Your access has expired. Contact the admin on Telegram for a new login.</div>}
+          {notice === 'device' && <div className="notice" style={{ margin: '0 0 14px' }}>You were signed out because this login was used on another device. Each login works on one device at a time.</div>}
           {mode === 'signup' && (
             <div className="field"><label>Full name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Victor Kiptoo" /></div>
           )}

@@ -1,21 +1,42 @@
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 
+function Row({ icon, label, onClick }) {
+  return (
+    <button className="sell-row" onClick={onClick}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">{icon}</svg>
+      <span className="sell-row-label">{label}</span>
+      <span className="sell-row-chev">›</span>
+    </button>
+  )
+}
+
 export default function Sell() {
   const nav = useNavigate()
   return (
     <>
       <Header title="Sell" />
       <div className="view">
-        <div style={{ background: 'var(--chrome)', color: '#fff', padding: '26px 20px', textAlign: 'center' }}>
-          <h2 style={{ margin: '0 0 8px', fontSize: 20 }}>SELL TICKETS FROM ANY SITE</h2>
-          <p style={{ margin: 0, color: '#9aa7bc', fontSize: 14 }}>Reach fans even if you didn't buy on Ticketmaster.</p>
+        <div className="sell-hero">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" width="46" height="46">
+            <path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2 2 2 0 0 0 0-4Z" />
+            <path d="M15 6v12" strokeDasharray="1.5 2.5" />
+          </svg>
+          <h2>SELL TICKETS FROM ANY SITE</h2>
+          <p>Reach fans even if you didn't buy them here.</p>
         </div>
+
         <div className="pad">
-          <button className="btn primary" onClick={() => nav('/admin/create')}>Sell your tickets</button>
+          <button className="btn primary" onClick={() => nav('/admin/create')}>Sell Your Tickets</button>
         </div>
-        <div className="pad" style={{ paddingTop: 0 }}>
-          <button className="btn ghost" onClick={() => nav('/admin/manage')}>Tickets I'm selling</button>
+
+        <div className="sell-list">
+          <Row label="Tickets I'm Selling" onClick={() => nav('/admin/manage?status=live')}
+            icon={<><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2 2 2 0 0 0 0-4Z" /></>} />
+          <Row label="Sold Tickets" onClick={() => nav('/admin/manage?status=sold')}
+            icon={<><path d="M20 6 9 17l-5-5" /></>} />
+          <Row label="Expired Tickets" onClick={() => nav('/admin/manage?status=expired')}
+            icon={<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>} />
         </div>
       </div>
     </>
