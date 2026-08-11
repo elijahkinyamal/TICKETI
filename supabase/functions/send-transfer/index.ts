@@ -19,7 +19,7 @@
 // Resend API key remains server-side.
 
 import { corsHeaders, json } from '../_shared/cors.ts'
-import { requireUser, HttpError } from '../_shared/auth.ts'
+import { requireUser, adminClient, HttpError } from '../_shared/auth.ts'
 
 const RESEND_KEY =
   Deno.env.get('RESEND_API_KEY')
@@ -47,17 +47,6 @@ const APP_URL =
 //
 const LOGO_URL =
   Deno.env.get('TICKETMASTER_LOGO_URL') ?? ''
-
-// ============================================================
-// VERIFIED BADGE
-// ============================================================
-//
-// Blue certification seal shown right after the header wordmark.
-// Public (non-expiring) Storage URL, so it renders in Gmail
-// without needing a secret.
-//
-const VERIFIED_BADGE_URL =
-  'https://lhbrcahdtuxjxjqjxfnq.supabase.co/storage/v1/object/public/eliki-verified-badge-40.png/eliki-verified-badge-40.png'
 
 // ============================================================
 // ELIKI DESIGN TOKENS
@@ -102,7 +91,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { user, supabase } =
+    const { user } =
       await requireUser(req)
 
     const {
@@ -110,6 +99,7 @@ Deno.serve(async (req) => {
       to_email,
       to_name = '',
       note = '',
+      seat_ids = null,
     } = await req.json()
 
     if (!event_id || !to_email) {
@@ -119,46 +109,79 @@ Deno.serve(async (req) => {
       )
     }
 
+    // Seat mutations cross RLS (a recipient can hold seats on an event they
+    // don't own), so authorize the caller ourselves and use the admin client.
+    const admin = adminClient()
+
     // ----------------------------------------------------------
-    // Confirm event ownership
+    // Event details (for the email)
     // ----------------------------------------------------------
 
     const { data: ev } =
-      await supabase
+      await admin
         .from('events')
         .select(
-          'id, name, owner_id, poster_url, starts_at, venue'
+          'id, name, poster_url, starts_at, venue'
         )
         .eq('id', event_id)
         .single()
 
-    if (!ev || ev.owner_id !== user.id) {
-      throw new HttpError(
-        403,
-        'You do not own this event'
-      )
+    if (!ev) {
+      throw new HttpError(404, 'Event not found')
     }
 
     // ----------------------------------------------------------
-    // Get seats
+    // Resolve the seats to transfer
+    //
+    // - seat_ids given  → transfer exactly those (must be yours + available)
+    // - seat_ids omitted → transfer ALL seats you currently hold, available
     // ----------------------------------------------------------
 
-    const { data: seatRows } =
-      await supabase
-        .from('seats')
-        .select(
-          'section, seat_row, seat'
-        )
-        .eq('event_id', event_id)
+    let seatQuery = admin
+      .from('seats')
+      .select('id, section, seat_row, seat, owner_id, pending_transfer_id')
+      .eq('event_id', event_id)
+      .eq('owner_id', user.id)
+      .is('pending_transfer_id', null)
+
+    if (Array.isArray(seat_ids) && seat_ids.length) {
+      seatQuery = seatQuery.in('id', seat_ids)
+    }
+
+    const { data: available } = await seatQuery
+
+    const seatRows = available || []
+
+    // If specific seats were requested, every one must have been claimable.
+    if (
+      Array.isArray(seat_ids) &&
+      seat_ids.length &&
+      seatRows.length !== seat_ids.length
+    ) {
+      throw new HttpError(
+        409,
+        'Some selected tickets are not available to transfer'
+      )
+    }
+
+    if (!seatRows.length) {
+      throw new HttpError(
+        400,
+        'No tickets available to transfer'
+      )
+    }
+
+    const transferSeatIds = seatRows.map((s: { id: string }) => s.id)
 
     // ----------------------------------------------------------
-    // Create pending transfer
+    // Create pending transfer, then mark those seats as pending
+    // (this immediately reduces the sender's available count).
     // ----------------------------------------------------------
 
     const {
       data: transfer,
       error,
-    } = await supabase
+    } = await admin
       .from('transfers')
       .insert({
         event_id,
@@ -174,6 +197,17 @@ Deno.serve(async (req) => {
         400,
         error.message
       )
+    }
+
+    const { error: stampErr } = await admin
+      .from('seats')
+      .update({ pending_transfer_id: transfer.id })
+      .in('id', transferSeatIds)
+
+    if (stampErr) {
+      // Roll back the transfer row so we don't leave an empty pending transfer.
+      await admin.from('transfers').delete().eq('id', transfer.id)
+      throw new HttpError(500, stampErr.message)
     }
 
     // ----------------------------------------------------------
@@ -489,11 +523,18 @@ function buildHtml(p: {
             background:
               ${
                 active
-                  ? C.primaryContainer
-                  : '#dfe3ea'
+                  ? '#024ce0'
+                  : '#ffffff'
               };
 
             border-radius:50%;
+
+            border:
+              ${
+                active
+                  ? '0'
+                  : '1px dashed #aab0bd'
+              };
 
             text-align:center;
             vertical-align:middle;
@@ -509,7 +550,7 @@ function buildHtml(p: {
               ${
                 active
                   ? '#ffffff'
-                  : C.onSurfaceVariant
+                  : '#9aa0ad'
               };
           "
         >
@@ -542,8 +583,8 @@ function buildHtml(p: {
         color:
           ${
             active
-              ? C.primary
-              : C.onSurfaceVariant
+              ? '#024ce0'
+              : '#8a90a0'
           };
 
         margin-top:7px;
@@ -589,6 +630,13 @@ function buildHtml(p: {
   `
 
   // ==========================================================
+  // SENT ICON (hosted white ticket)
+  // ==========================================================
+
+  const sentIconImg =
+    `<img src="https://lhbrcahdtuxjxjqjxfnq.supabase.co/storage/v1/object/public/icon-ticket.png/ticket%20icon.png" width="18" height="18" alt="Received" style="display:inline-block;width:18px;height:18px;vertical-align:middle;background:#ffffff;padding:2px;border-radius:4px;border:0;outline:none;text-decoration:none;">`
+
+  // ==========================================================
   // PROGRESS TRACKER
   // ==========================================================
 
@@ -606,7 +654,7 @@ function buildHtml(p: {
 
       <tr>
 
-        <!-- RECEIVED -->
+        <!-- SENT -->
 
         <td
           align="center"
@@ -617,7 +665,7 @@ function buildHtml(p: {
         >
 
           ${progressIcon(
-            '↗',
+            sentIconImg,
             true
           )}
 
@@ -628,7 +676,7 @@ function buildHtml(p: {
 
         </td>
 
-        ${progressLine(true)}
+        ${progressLine(false)}
 
         <!-- ACCEPTED -->
 
@@ -665,7 +713,7 @@ function buildHtml(p: {
         >
 
           ${progressIcon(
-            '▣',
+            '★',
             false
           )}
 
@@ -890,32 +938,6 @@ ${preheader}
                       ? `<img src="${esc(LOGO_URL)}" alt="ticketmaster" height="26" style="display:block;height:26px;width:auto;border:0;outline:none;text-decoration:none;">`
                       : 'ticketmaster'
                   }
-                </td>
-
-                <!-- VERIFIED BADGE -->
-
-                <td
-                  valign="middle"
-                  style="
-                    padding-left:5px;
-
-                    vertical-align:middle;
-                  "
-                >
-                  <img
-                    src="${esc(VERIFIED_BADGE_URL)}"
-                    width="19"
-                    height="19"
-                    alt="Verified"
-                    style="
-                      display:block;
-                      width:19px;
-                      height:19px;
-                      border:0;
-                      outline:none;
-                      text-decoration:none;
-                    "
-                  >
                 </td>
 
               </tr>

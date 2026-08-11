@@ -41,7 +41,9 @@ export default function CreateEvent() {
         order: data.order_number || '', label: data.sale_label || 'General Sale',
         poster_url: data.poster_url || '', seat_map_url: data.seat_map_url || '',
       })
-      if (data.seats?.length) setSeats(data.seats.map((s) => ({ section: s.section || '', seat_row: s.seat_row || '', seat: s.seat || '' })))
+      // Only manage the seats this user owns (others may have been transferred away).
+      const mine = (data.seats || []).filter((s) => s.owner_id === user.id)
+      if (mine.length) setSeats(mine.map((s) => ({ section: s.section || '', seat_row: s.seat_row || '', seat: s.seat || '' })))
     })
   }, [id, editing, user])
 
@@ -107,14 +109,14 @@ export default function CreateEvent() {
     if (editing) {
       const { error } = await supabase.from('events').update(payload).eq('id', id)
       if (error) { setMsg(error.message); return }
-      // Replace the seat set (simplest reliable update for 1..n seats).
-      await supabase.from('seats').delete().eq('event_id', id)
-      if (cleanSeats.length) await supabase.from('seats').insert(cleanSeats.map((s) => ({ ...s, event_id: id })))
+      // Replace only MY seats (leaves seats already transferred to others intact).
+      await supabase.from('seats').delete().eq('event_id', id).eq('owner_id', user.id)
+      if (cleanSeats.length) await supabase.from('seats').insert(cleanSeats.map((s) => ({ ...s, event_id: id, owner_id: user.id })))
       nav(`/ticket/${id}`)
     } else {
       const { data: ev, error } = await supabase.from('events').insert({ owner_id: user.id, ...payload }).select().single()
       if (error) { setMsg(error.message); return }
-      if (cleanSeats.length) await supabase.from('seats').insert(cleanSeats.map((s) => ({ ...s, event_id: ev.id })))
+      if (cleanSeats.length) await supabase.from('seats').insert(cleanSeats.map((s) => ({ ...s, event_id: ev.id, owner_id: user.id })))
       nav(`/ticket/${ev.id}`)
     }
   }

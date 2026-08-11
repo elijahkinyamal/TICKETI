@@ -17,8 +17,12 @@ export const searchEvents = (params) => invoke('discovery-search', params)
 // Owner/admin: create a staff login with an enforced 30-day expiry.
 export const createStaffLogin = (payload) => invoke('admin-create-user', payload)
 
-// Owner: record a transfer and email the recipient.
+// Holder: transfer selected seats (payload.seat_ids) and email the recipient.
+// Omitting seat_ids transfers all seats you currently hold on the event.
 export const sendTransfer = (payload) => invoke('send-transfer', payload)
 
-// Recipient: accept a pending transfer (reassigns event ownership to you).
+// Recipient: accept a pending transfer (moves the transferred seats to you).
 export const acceptTransfer = (transfer_id) => invoke('accept-transfer', { transfer_id })
+
+// Sender: cancel a pending transfer (releases the held seats back to you).
+export const cancelTransfer = (transfer_id) => invoke('cancel-transfer', { transfer_id })

@@ -26,9 +26,16 @@ Deno.serve(async (req) => {
     if ((t.to_email ?? '').toLowerCase() !== (user.email ?? '').toLowerCase())
       throw new HttpError(403, 'This transfer is not addressed to you')
 
-    // Reassign ownership, then mark the transfer accepted.
-    const { error: e1 } = await admin.from('events').update({ owner_id: user.id }).eq('id', t.event_id)
+    // Move the seats on this transfer to the recipient, then mark accepted.
+    // (Seat-level ownership: only the transferred seats change hands — the
+    // sender keeps any seats they didn't include.)
+    const { data: movedSeats, error: e1 } = await admin.from('seats')
+      .update({ owner_id: user.id, pending_transfer_id: null })
+      .eq('pending_transfer_id', transfer_id)
+      .select('section, seat_row, seat')
     if (e1) throw new HttpError(500, e1.message)
+    if (!movedSeats || movedSeats.length === 0)
+      throw new HttpError(409, 'This transfer has no tickets to accept')
     const { error: e2 } = await admin.from('transfers')
       .update({ status: 'accepted', accepted_at: new Date().toISOString() })
       .eq('id', transfer_id)
@@ -39,7 +46,6 @@ Deno.serve(async (req) => {
     try {
       if (RESEND_KEY && user.email) {
         const { data: ev } = await admin.from('events').select('name, poster_url, starts_at, venue').eq('id', t.event_id).single()
-        const { data: seatRows } = await admin.from('seats').select('section, seat_row, seat').eq('event_id', t.event_id)
         const { data: sender } = await admin.from('profiles').select('full_name').eq('id', t.from_user).single()
         emailed = await sendAcceptedEmail({
           to: user.email,
@@ -47,7 +53,7 @@ Deno.serve(async (req) => {
           senderName: sender?.full_name || 'a member',
           eventName: ev?.name || 'your event',
           posterUrl: ev?.poster_url, startsAt: ev?.starts_at, venue: ev?.venue,
-          seats: seatRows || [],
+          seats: movedSeats,
         })
       }
     } catch (mailErr) { console.error('accepted email failed', mailErr) }

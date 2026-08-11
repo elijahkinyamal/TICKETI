@@ -42,16 +42,36 @@ export default function TicketDetail() {
   const [temail, setTemail] = useState('')
   const [tnote, setTnote] = useState('')
   const [tmsg, setTmsg] = useState('')
+  const [selSeats, setSelSeats] = useState(() => new Set())
 
-  useEffect(() => {
+  const toggleSeat = (sid) =>
+    setSelSeats((prev) => {
+      const next = new Set(prev)
+      if (next.has(sid)) next.delete(sid); else next.add(sid)
+      return next
+    })
+
+  const openTransfer = () => {
+    setTmsg('')
+    setSelSeats(new Set(seats.map((s) => s.id)))  // default: all selected
+    setTransferOpen(true)
+  }
+
+  const loadTicket = () => {
     if (!isConfigured || !user) { setLoading(false); return }
     supabase.from('events').select('*, seats(*)').eq('id', id).single()
       .then(({ data }) => {
         setEv(data || null)
-        setSeats(data?.seats || [])
+        // Only the seats I currently hold and that aren't already out on a
+        // pending transfer — these are the tickets I can view / transfer.
+        const mine = (data?.seats || []).filter(
+          (s) => s.owner_id === user.id && !s.pending_transfer_id
+        )
+        setSeats(mine)
         setLoading(false)
       })
-  }, [id, user])
+  }
+  useEffect(loadTicket, [id, user])
 
   if (loading) return (<><Header title="Ticket" back /><div className="center-note">Loading…</div></>)
   if (!ev) return (<><Header title="Ticket" back /><div className="center-note">Ticket not found.</div></>)
@@ -73,12 +93,18 @@ export default function TicketDetail() {
 
   const submitTransfer = async () => {
     setTmsg('')
+    const seat_ids = Array.from(selSeats)
+    if (!seat_ids.length) { setTmsg('Select at least one ticket to transfer.'); return }
     if (!temail.trim()) { setTmsg('Enter a recipient email.'); return }
     const to_name = `${tfirst.trim()} ${tlast.trim()}`.trim()
     try {
-      const r = await sendTransfer({ event_id: ev.id, to_email: temail.trim(), to_name, note: tnote.trim() })
-      setTmsg(r.emailed ? `Sent to ${temail.trim()}.` : `Transfer created for ${temail.trim()}.`)
+      const r = await sendTransfer({ event_id: ev.id, to_email: temail.trim(), to_name, note: tnote.trim(), seat_ids })
+      const n = seat_ids.length
+      setTmsg(r.emailed
+        ? `Sent ${n} ticket${n > 1 ? 's' : ''} to ${temail.trim()}.`
+        : `Transfer created for ${temail.trim()}.`)
       setTfirst(''); setTlast(''); setTemail(''); setTnote('')
+      loadTicket()  // transferred seats are now pending — your count drops
     } catch (e) { setTmsg(e.message) }
   }
 
@@ -156,7 +182,7 @@ export default function TicketDetail() {
 
       {/* Floating action bar */}
       <div className="floatbar">
-        <button onClick={() => { setTransferOpen(true); setTmsg('') }}>
+        <button onClick={openTransfer}>
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 17 17 7M9 7h8v8" /></svg>
           Transfer
         </button>
@@ -238,6 +264,29 @@ export default function TicketDetail() {
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-head"><span>Transfer tickets</span><button onClick={() => setTransferOpen(false)}>✕</button></div>
             <div className="sheet-body">
+              {seats.length === 0 ? (
+                <div className="notice">You have no tickets available to transfer.</div>
+              ) : (
+                <>
+                  <p className="eyebrow">Select tickets ({selSeats.size} of {seats.length})</p>
+                  <div className="seatpick">
+                    {seats.map((s, i) => (
+                      <label key={s.id} className="seatpick-row">
+                        <input
+                          type="checkbox"
+                          checked={selSeats.has(s.id)}
+                          onChange={() => toggleSeat(s.id)}
+                        />
+                        <span className="seatpick-label">
+                          {s.section || s.seat_row || s.seat
+                            ? `Sec ${s.section || 'GA'} · Row ${s.seat_row || '—'} · Seat ${s.seat || '—'}`
+                            : `Ticket ${i + 1}`}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
               <p className="eyebrow">Recipient details</p>
               <div className="row2">
                 <div className="field"><label>First name</label><input className="input" value={tfirst} onChange={(e) => setTfirst(e.target.value)} placeholder="Jane" /></div>
@@ -245,7 +294,9 @@ export default function TicketDetail() {
               </div>
               <div className="field"><label>Email</label><input className="input" type="email" value={temail} onChange={(e) => setTemail(e.target.value)} placeholder="fan@email.com" /></div>
               <div className="field"><label>Note (optional)</label><input className="input" value={tnote} onChange={(e) => setTnote(e.target.value)} placeholder="Enjoy the show!" /></div>
-              <button className="btn primary" onClick={submitTransfer}>Transfer {count} Ticket{count > 1 ? 's' : ''}</button>
+              <button className="btn primary" onClick={submitTransfer} disabled={selSeats.size === 0}>
+                Transfer {selSeats.size} Ticket{selSeats.size !== 1 ? 's' : ''}
+              </button>
               {tmsg && <div className="notice">{tmsg}</div>}
             </div>
           </div>
