@@ -3,14 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import { useAuth } from '../context/AuthContext'
 import { supabase, isConfigured } from '../lib/supabase'
-import { acceptTransfer, cancelTransfer } from '../lib/api'
+import { acceptTransfer } from '../lib/api'
 
 export default function MyTickets() {
   const { user } = useAuth()
   const nav = useNavigate()
   const [events, setEvents] = useState([])
   const [incoming, setIncoming] = useState([])
-  const [outgoing, setOutgoing] = useState([])
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
   const [tab, setTab] = useState('upcoming')
@@ -25,11 +24,7 @@ export default function MyTickets() {
       // Transfers addressed to me, still pending (RLS also scopes by my email).
       supabase.from('transfers').select('*, events(name, starts_at), seats(count)')
         .eq('to_email', user.email).eq('status', 'pending'),
-      // My outgoing pending transfers — cancellable.
-      supabase.from('transfers').select('*, events(name, starts_at), seats(count)')
-        .eq('from_user', user.id).eq('status', 'pending')
-        .order('created_at', { ascending: false }),
-    ]).then(([seatRes, inRes, outRes]) => {
+    ]).then(([seatRes, inRes]) => {
       // Group my held seats into events, with a per-event count.
       const byEvent = new Map()
       for (const r of (seatRes.data || [])) {
@@ -42,7 +37,6 @@ export default function MyTickets() {
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       setEvents(list)
       setIncoming(inRes.data || [])
-      setOutgoing(outRes.data || [])
       setLoading(false)
     })
   }
@@ -52,14 +46,6 @@ export default function MyTickets() {
     setMsg('')
     try {
       await acceptTransfer(id)
-      load()
-    } catch (e) { setMsg(e.message) }
-  }
-
-  const cancel = async (id) => {
-    setMsg('')
-    try {
-      await cancelTransfer(id)
       load()
     } catch (e) { setMsg(e.message) }
   }
@@ -107,27 +93,7 @@ export default function MyTickets() {
           </>
         )}
 
-        {outgoing.length > 0 && (
-          <>
-            <div className="pad" style={{ paddingBottom: 0 }}><p className="eyebrow">Pending transfers you sent</p></div>
-            {outgoing.map((t) => {
-              const n = t.seats?.[0]?.count ?? 0
-              return (
-                <div key={t.id} className="tkcard">
-                  <div className="body">
-                    <div className="d">To {t.to_email}{n ? ` · ×${n}` : ''}</div>
-                    <div className="t">{t.events?.name || 'Event'}</div>
-                    <div className="v">Waiting to be accepted</div>
-                    <button className="btn ghost" style={{ marginTop: 12 }} onClick={() => cancel(t.id)}>Cancel transfer</button>
-                  </div>
-                </div>
-              )
-            })}
-            {msg && <div className="notice">{msg}</div>}
-          </>
-        )}
-
-        {isConfigured && user && !loading && shown.length === 0 && incoming.length === 0 && outgoing.length === 0 && (
+        {isConfigured && user && !loading && shown.length === 0 && incoming.length === 0 && (
           <div className="emptystate">
             <div className="emptystate-icon">🎟️</div>
             <div className="emptystate-title">{tab === 'upcoming' ? 'No upcoming events' : 'No past events'}</div>
